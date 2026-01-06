@@ -1,0 +1,105 @@
+name: Check for libplist updates and publish
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Setup WASI SDK
+        uses: bytecodealliance/setup-wasi-sdk-action@dcd040abc428fe35253676ef0e6379fba9bf8f9f
+        with:
+          version: 30
+
+      - name: Check for new libplist release
+        id: check_release
+        run: |
+          LATEST_LIBPLIST=$(curl -s https://api.github.com/repos/libimobiledevice/libplist/releases/latest | jq -r .tag_name)
+          echo "Latest libplist version: $LATEST_LIBPLIST"
+          
+          CURRENT_LIBPLIST=$(node -p "require('./package.json').libplistVersion || ''")
+          echo "Current libplist version: $CURRENT_LIBPLIST"
+          
+          if [ "$LATEST_LIBPLIST" != "$CURRENT_LIBPLIST" ]; then
+            echo "New libplist version available: $LATEST_LIBPLIST"
+            echo "update_needed=true" >> $GITHUB_OUTPUT
+            echo "libplist_version=$LATEST_LIBPLIST" >> $GITHUB_OUTPUT
+          else
+            echo "Already up to date with libplist $CURRENT_LIBPLIST"
+            echo "update_needed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download and extract new libplist release
+        if: steps.check_release.outputs.update_needed == 'true'
+        run: |
+          LIBPLIST_VERSION=${{ steps.check_release.outputs.libplist_version }}
+          ./scripts/download-libplist.sh $LIBPLIST_VERSION
+
+      - name: Update package versions
+        if: steps.check_release.outputs.update_needed == 'true'
+        run: |
+          LIBPLIST_VERSION=${{ steps.check_release.outputs.libplist_version }}
+          
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+
+            if (!pkg.libplistVersion) {
+              pkg.version = '1.0.0';
+            } else {
+              const parts = pkg.version.split('.');
+              parts[2] = String(parseInt(parts[2]) + 1);
+              pkg.version = parts.join('.');
+            }
+            
+            pkg.libplistVersion = '$LIBPLIST_VERSION';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          
+          NEW_NPM_VERSION=$(node -p "require('./package.json').version")
+          echo "Updated npm package to version $NEW_NPM_VERSION (libplist $LIBPLIST_VERSION)"
+
+      - name: Build WASM module
+        if: steps.check_release.outputs.update_needed == 'true'
+        run: |
+          npm install
+          npm run build
+
+      - name: Run tests
+        if: steps.check_release.outputs.update_needed == 'true'
+        run: npm test
+
+      - name: Configure git
+        if: steps.check_release.outputs.update_needed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push update
+        if: steps.check_release.outputs.update_needed == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update to libplist ${{ steps.check_release.outputs.libplist_version }}"
+          file_pattern: "package.json package-lock.json"
+
+      - name: Publish to npm
+        if: steps.check_release.outputs.update_needed == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish
