@@ -1,8 +1,8 @@
 {
-  "version": "",
+  "version": "1.0.0",
   "name": "libplist",
   "description": "WebAssembly build of libplist with Node.js API",
-  "libplistVersion": "",
+  "libplistVersion": "2.7.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
