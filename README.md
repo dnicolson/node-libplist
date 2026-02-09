@@ -22,7 +22,7 @@ For library details, implementation notes, and plist format specifics, please se
 
 ### Usage: Direct XML ↔ Binary
 ```ts
-import plist from 'node-libplist';
+import plist from 'libplist';
 
 // XML → Binary
 const xmlString = `<?xml version="1.0" encoding="UTF-8"?>
@@ -36,7 +36,7 @@ const xmlOut = await plist.binaryToXml(binary);
 
 ### Usage: Object ↔ Plist
 ```ts
-import plist from 'node-libplist';
+import plist from 'libplist';
 
 // Object → XML/Binary (JSON-bridged)
 const obj = { intVal: 42, realVal: 3.14 };
